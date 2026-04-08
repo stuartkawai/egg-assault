@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>EGG ASSAULT: YOLK OF FURY</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -11,7 +12,7 @@ body {
   min-height:100vh; overflow:hidden;
   font-family:'Courier New',monospace;
 }
-#gc { position:relative; }
+#gc { position:relative; touch-action:none; }
 canvas { display:block; image-rendering:pixelated; cursor:none; }
 #title {
   position:absolute; inset:0;
@@ -28,19 +29,65 @@ canvas { display:block; image-rendering:pixelated; cursor:none; }
 .tstart { font-size:20px; color:#00FF88; animation:blink 0.9s infinite; margin-top:16px; }
 .twarn { color:#555; font-size:11px; margin-top:16px; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+/* ── Touch controls ── */
+#tc { position:absolute; inset:0; z-index:5; display:none; pointer-events:none; }
+#jzone {
+  position:absolute; left:0; bottom:0; width:50%; height:65%;
+  pointer-events:all;
+}
+#jbase {
+  position:absolute; width:110px; height:110px; border-radius:50%;
+  background:rgba(255,255,255,0.07); border:2px solid rgba(255,255,255,0.22);
+  display:none; pointer-events:none;
+  transform:translate(-50%,-50%);
+}
+#jknob {
+  position:absolute; width:46px; height:46px; border-radius:50%;
+  background:rgba(255,200,0,0.55); border:2px solid rgba(255,220,0,0.85);
+  pointer-events:none; transform:translate(-50%,-50%);
+}
+#azone {
+  position:absolute; right:0; top:0; width:50%; height:100%;
+  pointer-events:all;
+}
+#fbtn {
+  position:absolute; right:5%; bottom:6%;
+  width:72px; height:72px; border-radius:50%;
+  background:rgba(220,30,0,0.75); border:3px solid rgba(255,200,0,0.9);
+  color:#FFD700; font-size:22px; font-weight:bold;
+  display:flex; align-items:center; justify-content:center;
+  pointer-events:all; user-select:none;
+  font-family:'Courier New',monospace;
+  text-shadow:0 0 8px #FF6600;
+  box-shadow:0 0 14px rgba(255,100,0,0.55);
+}
+@media (max-width:600px) {
+  .ttop { font-size:36px; }
+  .tsub { font-size:18px; letter-spacing:4px; }
+  .tcontrols { font-size:11px; }
+}
 </style>
 </head>
 <body>
 <div id="gc">
   <canvas id="c"></canvas>
+  <div id="tc">
+    <div id="jzone"><div id="jbase"><div id="jknob"></div></div></div>
+    <div id="azone"></div>
+    <div id="fbtn">🥚</div>
+  </div>
   <div id="title" onclick="startGame()">
     <div class="ttop">🥚 EGG ASSAULT 🥚</div>
     <div class="tsub">YOLK OF FURY</div>
     <canvas id="tegg" width="90" height="90"></canvas>
-    <div class="tcontrols">
+    <div class="tcontrols" id="tctrl-desktop">
       WASD / ARROWS — MOVE &nbsp;|&nbsp; MOUSE — AIM<br>
       LEFT CLICK / SPACE — LAUNCH EGG<br>
       Q/E — TURN &nbsp;|&nbsp; CLICK CANVAS TO LOCK MOUSE
+    </div>
+    <div class="tcontrols" id="tctrl-mobile" style="display:none">
+      LEFT THUMB — MOVE &nbsp;|&nbsp; RIGHT THUMB — AIM<br>
+      🥚 BUTTON — LAUNCH EGG
     </div>
     <div class="tstart">▶ CLICK ANYWHERE TO START ◀</div>
     <div class="twarn">⚠ WARNING: Side effects include uncontrollable giggling and mild egg cravings</div>
@@ -56,12 +103,31 @@ canvas { display:block; image-rendering:pixelated; cursor:none; }
 const RW=400, RH=300, DW=800, DH=600;
 const canvas=document.getElementById('c');
 canvas.width=DW; canvas.height=DH;
+
+// ── Responsive canvas sizing ──
+function resizeCanvas(){
+  const ratio=DW/DH;
+  const maxW=window.innerWidth, maxH=window.innerHeight;
+  let w,h;
+  if(maxW/maxH>ratio){h=maxH;w=h*ratio;}
+  else{w=maxW;h=w/ratio;}
+  canvas.style.width=Math.floor(w)+'px';
+  canvas.style.height=Math.floor(h)+'px';
+}
+resizeCanvas();
+window.addEventListener('resize',resizeCanvas);
 const ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 const buf=document.createElement('canvas');
 buf.width=RW; buf.height=RH;
 const bx=buf.getContext('2d');
 bx.imageSmoothingEnabled=false;
+
+// Show mobile controls hint on title if touch device
+if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
+  document.getElementById('tctrl-desktop').style.display='none';
+  document.getElementById('tctrl-mobile').style.display='block';
+}
 
 // Title egg
 (()=>{
@@ -479,6 +545,14 @@ function updPlayer(dt){
   if(K['s']||K['arrowdown']){dx-=p.dirX*spd;dy-=p.dirY*spd;mv=true;}
   if(K['a']||K['arrowleft']){dx+=p.dirY*spd;dy-=p.dirX*spd;mv=true;}
   if(K['d']||K['arrowright']){dx-=p.dirY*spd;dy+=p.dirX*spd;mv=true;}
+  // Touch joystick movement
+  const joy=getJoyInput();
+  if(joy.fx||joy.fy){
+    const fwd=-joy.fy,str=-joy.fx;
+    dx+=(p.dirX*fwd+p.dirY*str)*spd;
+    dy+=(p.dirY*fwd-p.dirX*str)*spd;
+    mv=true;
+  }
   const mg=0.28;
   if(cell(Math.floor(p.x+dx+(dx>0?mg:-mg)),Math.floor(p.y))===0) p.x+=dx;
   if(cell(Math.floor(p.x),Math.floor(p.y+dy+(dy>0?mg:-mg)))===0) p.y+=dy;
@@ -982,6 +1056,102 @@ document.addEventListener('keydown',e=>{
   }
 });
 
+// ── Touch input ──
+const isMobileDevice=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+const jBase=document.getElementById('jbase');
+const jKnob=document.getElementById('jknob');
+let jTouch=null; // {id,startX,startY,x,y} – movement joystick
+let aTouch=null; // {id,lastX} – aim swipe
+const JR=55; // joystick max radius (px on screen)
+
+function getJoyInput(){
+  if(!jTouch)return{fx:0,fy:0};
+  const dx=jTouch.x-jTouch.startX, dy=jTouch.y-jTouch.startY;
+  const len=Math.sqrt(dx*dx+dy*dy);
+  if(len<10)return{fx:0,fy:0};
+  const s=Math.min(len,JR)/JR;
+  return{fx:(dx/len)*s, fy:(dy/len)*s};
+}
+
+function showJoy(x,y){
+  jBase.style.left=x+'px'; jBase.style.top=y+'px'; jBase.style.display='block';
+  jKnob.style.left=x+'px'; jKnob.style.top=y+'px';
+}
+function moveJoyKnob(tx,ty,sx,sy){
+  const dx=tx-sx, dy=ty-sy;
+  const len=Math.sqrt(dx*dx+dy*dy);
+  const r=Math.min(len,JR);
+  const kx=sx+(len>0?(dx/len)*r:0);
+  const ky=sy+(len>0?(dy/len)*r:0);
+  jKnob.style.left=kx+'px'; jKnob.style.top=ky+'px';
+}
+function hideJoy(){jBase.style.display='none';}
+
+// Convert client coords to coords relative to #jzone
+function relToZone(el,cx,cy){
+  const r=el.getBoundingClientRect();
+  return{x:cx-r.left, y:cy-r.top};
+}
+
+const jZone=document.getElementById('jzone');
+const aZone=document.getElementById('azone');
+const fBtn=document.getElementById('fbtn');
+
+jZone.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  if(jTouch)return;
+  const t=e.changedTouches[0];
+  const p=relToZone(jZone,t.clientX,t.clientY);
+  jTouch={id:t.identifier,startX:p.x,startY:p.y,x:p.x,y:p.y};
+  showJoy(p.x,p.y);
+},{passive:false});
+jZone.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    if(jTouch&&t.identifier===jTouch.id){
+      const p=relToZone(jZone,t.clientX,t.clientY);
+      jTouch.x=p.x; jTouch.y=p.y;
+      moveJoyKnob(p.x,p.y,jTouch.startX,jTouch.startY);
+    }
+  }
+},{passive:false});
+jZone.addEventListener('touchend',e=>{
+  for(const t of e.changedTouches){
+    if(jTouch&&t.identifier===jTouch.id){jTouch=null;hideJoy();}
+  }
+});
+jZone.addEventListener('touchcancel',e=>{jTouch=null;hideJoy();});
+
+const AIM_SENS=0.55; // touch aim sensitivity (lower=slower)
+aZone.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  if(aTouch)return;
+  const t=e.changedTouches[0];
+  aTouch={id:t.identifier,lastX:t.clientX};
+  if(G.state==='LEVELCOMPLETE'){nextLevel();}
+  if(G.state==='GAMEOVER'){restartGame();}
+},{passive:false});
+aZone.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    if(aTouch&&t.identifier===aTouch.id){
+      const ddx=(t.clientX-aTouch.lastX);
+      // scale by ratio of internal canvas width to CSS width
+      const cssW=canvas.getBoundingClientRect().width;
+      mDX+=ddx*(DW/cssW)*AIM_SENS;
+      aTouch.lastX=t.clientX;
+    }
+  }
+},{passive:false});
+aZone.addEventListener('touchend',e=>{
+  for(const t of e.changedTouches){if(aTouch&&t.identifier===aTouch.id)aTouch=null;}
+});
+aZone.addEventListener('touchcancel',e=>{aTouch=null;});
+
+fBtn.addEventListener('touchstart',e=>{e.preventDefault();mDown=true;},{passive:false});
+fBtn.addEventListener('touchend',e=>{e.preventDefault();mDown=false;},{passive:false});
+fBtn.addEventListener('touchcancel',e=>{mDown=false;});
+
 // ═══════════════════════════════════════════════════
 //  LEVEL MANAGEMENT
 // ═══════════════════════════════════════════════════
@@ -1040,6 +1210,7 @@ function loop(ts){
 // ═══════════════════════════════════════════════════
 function startGame(){
   document.getElementById('title').style.display='none';
+  if(isMobileDevice){document.getElementById('tc').style.display='block';}
   if(!AC)initAudio();
   G.textures=genTextures();
   G.lvl=0;G.score=0;G.totalFired=0;G.combo=1;
